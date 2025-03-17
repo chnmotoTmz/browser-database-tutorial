@@ -1,12 +1,13 @@
 /**
  * SQLライクなインターフェースを提供するIndexedDBラッパー
  */
-export class SQLInterface {
+class SQLInterface {
     constructor(dbName = 'bookDB') {
         this.dbName = dbName;
         this.db = null;
         this.version = 1;
         this.tables = new Map();
+        this.pendingTables = [];
     }
 
     /**
@@ -20,18 +21,85 @@ export class SQLInterface {
             request.onsuccess = (event) => {
                 this.db = event.target.result;
                 console.log('データベースに接続しました');
-                resolve();
+                
+                // 保留中のテーブルがあれば作成を試みる
+                if (this.pendingTables.length > 0) {
+                    this._handlePendingTables().then(resolve).catch(reject);
+                } else {
+                    resolve();
+                }
             };
             
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
                 console.log('データベースを新規作成します');
+                
                 // テーブル情報を保存するためのオブジェクトストア
                 if (!db.objectStoreNames.contains('_tables')) {
                     db.createObjectStore('_tables', { keyPath: 'name' });
                 }
+                
+                // 保留中のテーブルを作成
+                this.pendingTables.forEach(tableInfo => {
+                    if (!db.objectStoreNames.contains(tableInfo.name)) {
+                        const store = db.createObjectStore(tableInfo.name, {
+                            keyPath: 'id',
+                            autoIncrement: true
+                        });
+                        
+                        // インデックスを作成
+                        tableInfo.columns.forEach(col => {
+                            if (col.name !== 'id') {
+                                store.createIndex(col.name, col.name, { unique: false });
+                            }
+                        });
+                        
+                        console.log(`テーブル ${tableInfo.name} を作成しました`);
+                    }
+                });
             };
         });
+    }
+
+    /**
+     * バージョンを上げてデータベースを再オープンする
+     */
+    async reopenWithNewVersion() {
+        if (this.db) {
+            this.db.close();
+        }
+        this.version++;
+        return this.open();
+    }
+
+    /**
+     * 保留中のテーブルを処理する
+     */
+    async _handlePendingTables() {
+        if (this.pendingTables.length === 0) return;
+        
+        // テーブル情報をストアに保存
+        const tableTransaction = this.db.transaction(['_tables'], 'readwrite');
+        const tableStore = tableTransaction.objectStore('_tables');
+        
+        await new Promise((resolve, reject) => {
+            this.pendingTables.forEach(tableInfo => {
+                tableStore.put({
+                    name: tableInfo.name,
+                    columns: tableInfo.columns,
+                    created: new Date()
+                });
+            });
+            
+            tableTransaction.oncomplete = resolve;
+            tableTransaction.onerror = reject;
+        });
+        
+        // 新しいバージョンでデータベースを再オープン
+        await this.reopenWithNewVersion();
+        
+        // 保留リストをクリア
+        this.pendingTables = [];
     }
 
     /**
@@ -67,38 +135,22 @@ export class SQLInterface {
      * CREATE TABLE文の処理
      */
     async _handleCreate(parsed) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['_tables'], 'readwrite');
-            const tableStore = transaction.objectStore('_tables');
-
-            // テーブル情報を保存
-            tableStore.put({
-                name: parsed.table,
-                columns: parsed.columns,
-                created: new Date()
-            });
-
-            // テーブルのオブジェクトストアを作成
-            if (!this.db.objectStoreNames.contains(parsed.table)) {
-                const store = this.db.createObjectStore(parsed.table, {
-                    keyPath: 'id',
-                    autoIncrement: true
-                });
-
-                // インデックスを作成
-                parsed.columns.forEach(col => {
-                    if (col.name !== 'id') {
-                        store.createIndex(col.name, col.name, { unique: false });
-                    }
-                });
-            }
-
-            transaction.oncomplete = () => {
-                console.log(`テーブル ${parsed.table} を作成しました`);
-                resolve();
-            };
-            transaction.onerror = () => reject(new Error('テーブルの作成に失敗しました'));
+        // テーブルがすでに存在するか確認
+        if (this.db.objectStoreNames.contains(parsed.table)) {
+            console.log(`テーブル ${parsed.table} はすでに存在します`);
+            return;
+        }
+        
+        // テーブル情報を保留リストに追加
+        this.pendingTables.push({
+            name: parsed.table,
+            columns: parsed.columns
         });
+        
+        // データベースを再オープンしてテーブルを作成
+        await this._handlePendingTables();
+        
+        return true;
     }
 
     /**
@@ -106,21 +158,25 @@ export class SQLInterface {
      */
     async _handleInsert(parsed, params) {
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([parsed.table], 'readwrite');
-            const store = transaction.objectStore(parsed.table);
+            try {
+                const transaction = this.db.transaction([parsed.table], 'readwrite');
+                const store = transaction.objectStore(parsed.table);
 
-            const data = {};
-            parsed.columns.forEach((col, i) => {
-                data[col] = params[i];
-            });
-            data.created_at = new Date();
+                const data = {};
+                parsed.columns.forEach((col, i) => {
+                    data[col] = params[i];
+                });
+                data.created_at = new Date();
 
-            const request = store.add(data);
-            request.onsuccess = () => {
-                console.log('データを挿入しました:', data);
-                resolve(request.result);
-            };
-            request.onerror = () => reject(new Error('データの挿入に失敗しました'));
+                const request = store.add(data);
+                request.onsuccess = () => {
+                    console.log('データを挿入しました:', data);
+                    resolve(request.result);
+                };
+                request.onerror = () => reject(new Error('データの挿入に失敗しました'));
+            } catch (error) {
+                reject(error);
+            }
         });
     }
 
@@ -129,27 +185,31 @@ export class SQLInterface {
      */
     async _handleSelect(parsed, params) {
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([parsed.table], 'readonly');
-            const store = transaction.objectStore(parsed.table);
-            const request = store.getAll();
+            try {
+                const transaction = this.db.transaction([parsed.table], 'readonly');
+                const store = transaction.objectStore(parsed.table);
+                const request = store.getAll();
 
-            request.onsuccess = () => {
-                let results = request.result;
+                request.onsuccess = () => {
+                    let results = request.result;
 
-                // WHERE句の処理
-                if (parsed.where) {
-                    results = this._filterByCondition(results, parsed.where, params);
-                }
+                    // WHERE句の処理
+                    if (parsed.where) {
+                        results = this._filterByCondition(results, parsed.where, params);
+                    }
 
-                // ORDER BY句の処理
-                if (parsed.orderBy) {
-                    results = this._sortResults(results, parsed.orderBy);
-                }
+                    // ORDER BY句の処理
+                    if (parsed.orderBy) {
+                        results = this._sortResults(results, parsed.orderBy);
+                    }
 
-                console.log('検索結果:', results);
-                resolve(results);
-            };
-            request.onerror = () => reject(new Error('検索に失敗しました'));
+                    console.log('検索結果:', results);
+                    resolve(results);
+                };
+                request.onerror = () => reject(new Error('検索に失敗しました'));
+            } catch (error) {
+                reject(error);
+            }
         });
     }
 
@@ -300,7 +360,7 @@ export class SQLInterface {
                     case '=':
                         return recordValue === value;
                     case 'LIKE':
-                        return recordValue.includes(value.replace(/%/g, ''));
+                        return recordValue && recordValue.includes(value.replace(/%/g, ''));
                     case '>':
                         return recordValue > value;
                     case '<':

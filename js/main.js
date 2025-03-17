@@ -1,4 +1,5 @@
-import { BookDatabase } from './db/BookDatabase.js';
+// 本管理アプリのメインスクリプト
+// BookDatabase と SQLInterface がグローバル変数として使用可能であることを想定
 
 class BookApp {
     constructor() {
@@ -201,12 +202,12 @@ class BookApp {
     }
 
     showSuccess(message) {
-        // 成功メッセージの表示（実装は省略）
+        // 成功メッセージの表示
         alert(message);
     }
 
     showError(message) {
-        // エラーメッセージの表示（実装は省略）
+        // エラーメッセージの表示
         alert(message);
     }
 

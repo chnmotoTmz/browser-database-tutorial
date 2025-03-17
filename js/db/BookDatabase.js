@@ -1,9 +1,7 @@
-import { SQLInterface } from './SQLInterface.js';
-
 /**
  * 本管理用データベース
  */
-export class BookDatabase {
+class BookDatabase {
     constructor() {
         this.sql = new SQLInterface('bookDB');
     }
