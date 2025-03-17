@@ -1,0 +1,1 @@
+Develop a browser-based SQLite app with client-side data management using MetaGPT's automated software development pipeline.
