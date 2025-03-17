@@ -8,6 +8,7 @@ class SQLInterface {
         this.version = 1;
         this.tables = new Map();
         this.pendingTables = [];
+        this.isUpgrading = false;
     }
 
     /**
@@ -15,19 +16,19 @@ class SQLInterface {
      */
     async open() {
         return new Promise((resolve, reject) => {
+            // すでにアップグレード中なら処理しない
+            if (this.isUpgrading) {
+                return resolve();
+            }
+            
             const request = indexedDB.open(this.dbName, this.version);
             
             request.onerror = () => reject(new Error('データベースを開けませんでした'));
+            
             request.onsuccess = (event) => {
                 this.db = event.target.result;
                 console.log('データベースに接続しました');
-                
-                // 保留中のテーブルがあれば作成を試みる
-                if (this.pendingTables.length > 0) {
-                    this._handlePendingTables().then(resolve).catch(reject);
-                } else {
-                    resolve();
-                }
+                resolve();
             };
             
             request.onupgradeneeded = (event) => {
@@ -65,41 +66,48 @@ class SQLInterface {
      * バージョンを上げてデータベースを再オープンする
      */
     async reopenWithNewVersion() {
-        if (this.db) {
-            this.db.close();
+        // アップグレードフラグを設定
+        this.isUpgrading = true;
+        
+        try {
+            if (this.db) {
+                this.db.close();
+            }
+            
+            // バージョンを上げる
+            this.version++;
+            
+            // 新しいバージョンでオープン
+            return await this.open();
+        } finally {
+            // 処理完了後にフラグをリセット
+            this.isUpgrading = false;
         }
-        this.version++;
-        return this.open();
     }
 
     /**
      * 保留中のテーブルを処理する
      */
     async _handlePendingTables() {
+        // 保留中のテーブルがなければ何もしない
         if (this.pendingTables.length === 0) return;
         
-        // テーブル情報をストアに保存
-        const tableTransaction = this.db.transaction(['_tables'], 'readwrite');
-        const tableStore = tableTransaction.objectStore('_tables');
+        // すでにアップグレード中なら二重処理を防ぐ
+        if (this.isUpgrading) return;
         
-        await new Promise((resolve, reject) => {
-            this.pendingTables.forEach(tableInfo => {
-                tableStore.put({
-                    name: tableInfo.name,
-                    columns: tableInfo.columns,
-                    created: new Date()
-                });
-            });
+        try {
+            // 新しいバージョンでデータベースを再オープン
+            await this.reopenWithNewVersion();
             
-            tableTransaction.oncomplete = resolve;
-            tableTransaction.onerror = reject;
-        });
-        
-        // 新しいバージョンでデータベースを再オープン
-        await this.reopenWithNewVersion();
-        
-        // 保留リストをクリア
-        this.pendingTables = [];
+            // 保留リストをクリア（テーブルは作成済み）
+            const pendingTablesCopy = [...this.pendingTables];
+            this.pendingTables = [];
+            
+            return pendingTablesCopy;
+        } catch (error) {
+            console.error('テーブル作成中にエラーが発生しました:', error);
+            throw error;
+        }
     }
 
     /**
@@ -138,7 +146,7 @@ class SQLInterface {
         // テーブルがすでに存在するか確認
         if (this.db.objectStoreNames.contains(parsed.table)) {
             console.log(`テーブル ${parsed.table} はすでに存在します`);
-            return;
+            return true;
         }
         
         // テーブル情報を保留リストに追加
