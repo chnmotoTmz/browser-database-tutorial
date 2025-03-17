@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本管理アプリ</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .rating {
+            color: #ffd700;
+        }
+        .book-card {
+            transition: transform 0.2s;
+        }
+        .book-card:hover {
+            transform: translateY(-5px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <!-- ヘッダー -->
+        <header class="pb-3 mb-4 border-bottom">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="h4 mb-0">📚 本管理アプリ</h1>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-primary" id="importBtn">
+                        <i class="bi bi-upload"></i> インポート
+                    </button>
+                    <button class="btn btn-outline-secondary" id="exportBtn">
+                        <i class="bi bi-download"></i> エクスポート
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- メイン -->
+        <main>
+            <!-- 検索と追加 -->
+            <div class="row mb-4">
+                <div class="col-md-8">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="searchInput" placeholder="タイトルや著者で検索...">
+                    </div>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button class="btn btn-primary w-100" id="addBookBtn">
+                        <i class="bi bi-plus-circle"></i> 本を追加
+                    </button>
+                </div>
+            </div>
+
+            <!-- 本の一覧 -->
+            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4" id="bookList">
+                <!-- 本のカードがここに動的に追加されます -->
+            </div>
+        </main>
+
+        <!-- 本の追加・編集モーダル -->
+        <div class="modal fade" id="bookModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="modalTitle">本を追加</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="bookForm">
+                            <input type="hidden" id="bookId">
+                            <div class="mb-3">
+                                <label class="form-label">タイトル</label>
+                                <input type="text" class="form-control" id="titleInput" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">著者</label>
+                                <input type="text" class="form-control" id="authorInput">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">読んだ日</label>
+                                <input type="date" class="form-control" id="readDateInput">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">評価</label>
+                                <select class="form-select" id="ratingInput">
+                                    <option value="">選択してください</option>
+                                    <option value="5">⭐⭐⭐⭐⭐</option>
+                                    <option value="4">⭐⭐⭐⭐</option>
+                                    <option value="3">⭐⭐⭐</option>
+                                    <option value="2">⭐⭐</option>
+                                    <option value="1">⭐</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">メモ</label>
+                                <textarea class="form-control" id="memoInput" rows="3"></textarea>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                        <button type="button" class="btn btn-primary" id="saveBookBtn">保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
